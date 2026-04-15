@@ -1,40 +1,60 @@
-## GÓP Ý SỬA/THÊM CHO KIẾN TRÚC DIAGRAM TUẦN 2
-Dựa trên hình 3-tier.png hiện tại ở [text](<../../Week 1>), chúng ta sẽ có nhưng solution như sau:
+## GÓP Ý SỬA/THÊM CHO KIẾN TRÚC DIAGRAM TUẦN 2 (ĐỒNG BỘ VỚI KỊCH BẢN THUYẾT TRÌNH)
+Dựa trên hình 3-tier.png hiện tại ở [text](<../../Week 1>) và sự đồng bộ chặt chẽ với kịch bản thuyết trình Tuần 2, chúng ta sẽ có những bổ sung quan trọng như sau:
 
-1. Thiếu kho lưu trữ S3 (Bắt buộc phải có ít nhất 2 bucket)
+---
 
-* Vấn đề: Hiện tại bạn đang dùng Amplify để host Frontend và chưa có kho lưu trữ file do user tải lên hay backup. Yêu cầu tuần 2 bắt buộc phải chỉ đích danh các S3.
-Cách vẽ thêm:
-Thêm icon Amazon S3 số 1 (Ví dụ tên: Static Assets / Frontend Bucket). Nếu Amplify dùng S3 ẩn bên dưới, hãy vẽ rõ ra, hoặc chuyển host Web tĩnh qua S3 nối với CloudFront. Kèm chú thích: Storage Class: S3 Standard.
-Thêm icon Amazon S3 số 2 (Ví dụ tên: User Uploads / Media Bucket). Nối đường mũi tên từ Fargate-backend tới bucket này. Kèm chú thích: Storage Class: S3 Standard-IA (nếu ít truy cập) hoặc S3 Standard.
+### 1. Phân tách Data Layer với các bucket S3 rõ ràng (Bắt buộc)
 
----------------------------------------
+* **Vấn đề:** Hiện tại kiến trúc đang gộp chung và chưa thể hiện chiến lược quản lý dữ liệu (giảm Blast Radius và tối ưu Lifecycle).
+* **Cách vẽ thêm:** Vẽ rõ một cụm **Amazon S3 Data Layer** thể hiện các bucket sau:
+  - **Bucket 1 (Tùy chọn - nếu Front-end không dùng Amplify): Static Assets**. (Host web tĩnh).
+  - **Bucket 2: user-media:** Lưu trực tiếp ảnh sản phẩm, avatar, review. Nối đường mũi tên từ Fargate-backend ra bucket này.
+  - **Bucket 3: logs-audit:** Lưu audit từ CloudTrail và truy cập từ CloudFront/ALB. 
+  - **Bucket 4: backup-archive:** Dùng để backup/snapshot database.
 
-2. Thiếu thông tin ổ cứng EBS (Bắt buộc phải chỉ đích danh loại Volume)
+---
 
-* Vấn đề: Đề bài yêu cầu "Attach an EBS volume to your DB-tier... and note the volume type". Nhóm bạn dùng RDS (Managed Service) là rất xịn, nhưng nguyên lý dưới đáy RDS vẫn là ổ EBS. Giám khảo sẽ bắt bẻ nếu không nhắc đến Storage Type ở DB.
-Cách vẽ thêm: Ngay bên dưới cụm icon RDS (Master & Standby Database), vẽ thêm icon ô vuông của Amazon EBS hoặc ghi hẳn Text box: Storage: EBS gp3. Kèm 1 dòng lý do ngắn: Reason: gp3 configures IOPS independently of storage capacity, cost-effective baseline.
+### 2. Thiết lập Mã hóa KMS làm cốt lõi (Bắt buộc - Không còn là "Điểm cộng")
 
----------------------------------------
+* **Vấn đề:** Kịch bản đặc biệt nhấn mạnh dữ liệu phải bọc 2 lớp phân quyền (Quyền S3 + quyền KMS). Nếu bỏ qua, hệ thống sẽ rất rời rạc với lời thuyết trình.
+* **Cách vẽ thêm:** Vẽ icon **AWS KMS** ngay hệ thống lưu trữ S3 và RDS. Ghi chú rõ hệ thống sử dụng các Customer Managed Key (CMK) chuyên biệt:
+  - `key-media` bọc bucket `user-media`.
+  - `key-logs` bọc bucket `logs-audit`.
+  - `key-backup` bọc bucket `backup-archive` và RDS Snapshot.
 
-3. Thiếu Định danh - IAM Roles (Lỗi sẽ bị trừ điểm nặng nhất)
+---
 
-* Vấn đề: Chưa thấy các thiết lập cấp quyền cho Fargate backend gọi các dịch vụ khác (ví dụ gọi S3, hoặc đẩy log lên CloudWatch).
-Cách vẽ thêm: Gắn icon cái khiên có chìa khóa AWS IAM Role ngay cạnh cục ECS Cluster (Fargate-backend). Chú thích nhỏ: ECS Task Role: Allows backend to R/W S3 & send logs to CloudWatch. No hard-coded keys.
+### 3. Cụ thể hóa Định danh IAM Roles (Lỗi sẽ bị trừ điểm nặng nhất nếu thiếu)
 
----------------------------------------
+* **Vấn đề:** Nếu chỉ vẽ chung chung một Role thì không phản ánh được nguyên tắc Least Privilege như kịch bản trình bày.
+* **Cách vẽ thêm:** Gắn icon cái khiên có chìa khóa **AWS IAM Role** và note rõ các Role chuyên biệt đã chỉ định:
+  - **ECS Task Role:** Chỉ có quyền đọc/ghi vào `user-media` bucket bằng `key-media`.
+  - **Logging Role:** Chỉ được mã hóa log ghi vào `logs-audit`.
+  - **Backup / DBA Role:** Thực thi quá trình backup và chỉ có Admin/DBA mới có lệnh **Decrypt** bằng `key-backup` để restore hệ thống.
 
-4. Thiếu ranh giới Security Groups (Tường lửa)
+---
 
-* Vấn đề: Bạn có WAF, có Route Table nhưng chưa thể hiện Security Group (SG).
-Cách vẽ thêm: Hãy vẽ các đường viền nét đứt (Box đứt đoạn, có hình cái ổ khóa) bao quanh từng cụm để thể hiện Security Group:
-ALB-SG: Chỉ cho phép Inbound Port 80/443 từ Internet/CloudFront.
-App-SG (bao quanh Fargate): Chỉ cho phép Inbound Port của App (vd 8080) TỪ ALB-SG.
-DB-SG (bao quanh RDS): Chỉ cho phép Inbound Port (3306 mặc định của MySQL hoặc 5432 của PostgreSQL) TỪ App-SG.
-(Cái này rất tuyệt để chứng minh bạn hiểu rõ sự "kín kẽ" của mô hình 3-tier).
+### 4. Hệ thống Quan sát và Kiểm toán (Observability)
 
----------------------------------------
+* **Vấn đề:** Trọng điểm vận hành tuần 2 là phân biệt được Logging hệ thống và Audit API.
+* **Cách vẽ thêm:** Cần vẽ nhóm icon Giám sát độc lập lên diagram:
+  - **Amazon CloudWatch:** Gắn kết nối thu thập log thời gian thực từ ALB/ECS/RDS (Runtime & Metric alert).
+  - **AWS CloudTrail:** Nối bao quát toàn bộ khối AWS kéo thẳng vào bucket `logs-audit` để truy vết hành động, thay đổi cấu hình hạ tầng.
 
-5. (Điểm cộng) Thêm mã hóa KMS
+---
 
-Vẽ thêm 1 icon AWS KMS ở góc sơ đồ, kéo mũi tên chỉ vào S3 và RDS để thể hiện: Mọi dữ liệu (Data at rest) đều được mã hóa bằng CMK (Customer Managed Key) từ KMS.
+### 5. Khẳng định thông tin ổ cứng EBS gp3 cho Database
+
+* **Vấn đề:** Nguyên lý dưới đáy RDS (Managed Service) vẫn là ổ đĩa block storage (EBS).
+* **Cách vẽ thêm:** Ngay bên dưới cụm icon RDS (Master & Standby Database), vẽ icon ô vuông hoặc thêm note box: **Storage: EBS gp3**. 
+  - Kèm giải thích: *Cân bằng IOPS/Performance và chi phí.*
+
+---
+
+### 6. Ranh giới Security Groups (Tường lửa)
+
+* **Vấn đề:** Chứng minh tính thiết kế mạng "kín kẽ" nhiều lớp của mô hình 3-tier.
+* **Cách vẽ thêm:** Hãy vẽ các đường viền nét đứt (Box đứt đoạn, hình ổ khóa) bao quanh từng cụm:
+  - **ALB-SG:** Chỉ Allow Inbound Port 80/443 từ Internet.
+  - **App-SG (bao quanh Fargate):** Chỉ Allow Inbound của App (vd 8080) hướng mũi tên TỪ ALB-SG.
+  - **DB-SG (bao quanh RDS):** Chỉ Allow Inbound (3306) hướng mũi tên TỪ App-SG.
