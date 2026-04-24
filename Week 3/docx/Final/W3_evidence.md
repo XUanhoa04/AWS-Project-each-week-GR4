@@ -17,6 +17,16 @@
 
 ---
 
+## W2 Recap: Kế thừa và Giải quyết Feedback từ W2
+
+Tiếp nối kiến trúc từ Tuần 2, hệ thống vẫn duy trì nghiêm ngặt các tiêu chuẩn bảo mật nền tảng như Block Public Access cho S3, mã hóa mặc định (Default Encryption), Versioning và thiết lập IAM Baseline (MFA, Named Users, dọn dẹp các rule chứa Wildcards). 
+
+Đặc biệt, nhóm đã ghi nhận và giải quyết triệt để các Trainer Feedback của W2 vào kiến trúc W3:
+- **Cải tiến vị trí mạng (Item cụ thể):** Trainer đã feedback rằng *"ECS task đang ở public subnet"*. Để khắc phục triệt để lỗ hổng này, nhóm đã **chuyển toàn bộ ECS Fargate tasks vào Private Subnet**. Giờ đây chỉ có Load Balancer (ALB) nằm ở Public Subnet nhận traffic từ internet và phân phối vào bên trong (sẽ được minh chứng rõ ở phần Security Group phía dưới).
+- Các khuyết điểm khác đã được chỉ ra như: **ALB thiếu HTTPS**, **ECR sử dụng public endpoint**, và việc **Secrets Manager injection chưa bảo mật** cũng đã được nhóm khắc phục hoàn toàn trong cấu hình của tuần này.
+
+---
+
 ## 2) Data Access Pattern Log (Parts A, B, C)
 
 ### Part A - Access Patterns
